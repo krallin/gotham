@@ -42,12 +42,19 @@ pub mod test;
 pub mod plain;
 
 /// Functions for creating a Gotham service using HTTPS.
+#[cfg(feature = "rustls")]
 pub mod tls;
 
+use futures::{Future, Stream};
+use hyper::server::conn::Http;
 use std::net::ToSocketAddrs;
-
-use tokio::net::TcpListener;
+use std::sync::Arc;
+use tokio::executor;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::{self, Runtime};
+use tokio_io::{AsyncRead, AsyncWrite};
+
+use crate::{handler::NewHandler, service::GothamService};
 
 pub use plain::*;
 #[cfg(feature = "rustls")]
@@ -72,4 +79,44 @@ where
         .expect("unable to resolve listener address");
 
     TcpListener::bind(&addr).expect("unable to open TCP listener")
+}
+
+/// Returns a `Future` used to spawn a Gotham application.
+///
+/// This is used internally, but it's exposed for clients that want to set up their own TLS
+/// support.
+pub fn bind_server<NH, F, S, W>(
+    listener: TcpListener,
+    new_handler: NH,
+    mut wrap: W,
+) -> impl Future<Item = (), Error = ()>
+where
+    NH: NewHandler + 'static,
+    F: Future<Item = S, Error = ()> + Send + 'static,
+    S: AsyncRead + AsyncWrite + Send + 'static,
+    W: FnMut(TcpStream) -> F,
+{
+    let protocol = Arc::new(Http::new());
+    let gotham_service = GothamService::new(new_handler);
+
+    listener
+        .incoming()
+        .map_err(|e| panic!("socket error = {:?}", e))
+        .for_each(move |socket| {
+            let addr = socket.peer_addr().unwrap();
+            let service = gotham_service.connect(addr);
+            let accepted_protocol = protocol.clone();
+            let handler = wrap(socket)
+                .map_err(|_| ())
+                .and_then(move |socket| {
+                    accepted_protocol
+                        .serve_connection(socket, service)
+                        .map_err(|_| ())
+                })
+                .map(|_| ());
+
+            executor::spawn(handler);
+
+            Ok(())
+        })
 }
