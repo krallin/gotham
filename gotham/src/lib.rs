@@ -50,6 +50,7 @@ use tokio::net::TcpListener;
 use tokio::runtime::{self, Runtime};
 
 pub use plain::*;
+#[cfg(feature = "rustls")]
 pub use tls::start as start_with_tls;
 
 fn new_runtime(threads: usize) -> Runtime {
