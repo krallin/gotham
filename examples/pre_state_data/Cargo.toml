@@ -1,0 +1,15 @@
+[package]
+name = "gotham_examples_pre_state_data"
+description = "An introduction to pre-state data in Gotham"
+version = "0.0.0"
+publish = false
+
+[dependencies]
+gotham = { path = "../../gotham" }
+gotham_derive = { path = "../../gotham_derive" }
+
+futures = "0.1"
+hyper = "0.12"
+mime = "0.3"
+tokio = "0.1"
+failure = "0.1"

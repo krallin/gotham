@@ -23,11 +23,16 @@ mod trap;
 
 /// Wraps a `NewHandler` which will be used to serve requests. Used in `gotham::os::*` to bind
 /// incoming connections to `ConnectedGothamService` values.
-pub(crate) struct GothamService<T>
-where
-    T: NewHandler + 'static,
-{
+pub(crate) struct GothamService<T> {
     handler: Arc<T>,
+}
+
+impl<T> Clone for GothamService<T> {
+    fn clone(&self) -> Self {
+        Self {
+            handler: self.handler.clone(),
+        }
+    }
 }
 
 impl<T> GothamService<T>
@@ -40,27 +45,48 @@ where
         }
     }
 
-    pub(crate) fn connect(&self, client_addr: SocketAddr) -> ConnectedGothamService<T> {
+    pub(crate) fn connect<P>(
+        &self,
+        client_addr: SocketAddr,
+        pre_state: P,
+    ) -> ConnectedGothamService<T, P> {
         ConnectedGothamService {
-            client_addr,
             handler: self.handler.clone(),
+            client_addr,
+            pre_state,
         }
+    }
+}
+
+/// State data collected before the `GothamService` has been connected. This can be used to pass
+/// through client data from a client socket down to the Gotham State. This must be used in
+/// combination with `bind_server_with_pre_state`.
+pub trait PreStateData {
+    /// Place this state data into the Gotham request State
+    fn fill_state(&self, state: &mut State);
+}
+
+impl PreStateData for () {
+    fn fill_state(&self, _state: &mut State) {
+        // No-op
     }
 }
 
 /// A `GothamService` which has been connected to a client. The major difference is that a
 /// `client_addr` has been assigned (as this isn't available from Hyper).
-pub(crate) struct ConnectedGothamService<T>
+pub(crate) struct ConnectedGothamService<T, P>
 where
     T: NewHandler + 'static,
 {
     handler: Arc<T>,
+    pre_state: P,
     client_addr: SocketAddr,
 }
 
-impl<T> Service for ConnectedGothamService<T>
+impl<T, P> Service for ConnectedGothamService<T, P>
 where
     T: NewHandler,
+    P: PreStateData,
 {
     type ReqBody = Body; // required by hyper::server::conn::Http::serve_connection()
     type ResBody = Body; // has to impl Payload...
@@ -71,6 +97,7 @@ where
         let mut state = State::new();
 
         put_client_addr(&mut state, self.client_addr);
+        self.pre_state.fill_state(&mut state);
 
         let (
             request::Parts {

@@ -54,6 +54,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::{self, Runtime};
 use tokio_io::{AsyncRead, AsyncWrite};
 
+pub use crate::service::PreStateData;
 use crate::{handler::NewHandler, service::GothamService};
 
 pub use plain::*;
@@ -98,6 +99,29 @@ where
     Wrapped: AsyncRead + AsyncWrite + Send + 'static,
     Wrap: FnMut(TcpStream) -> F,
 {
+    bind_server_with_pre_state(listener, new_handler, move |socket| {
+        wrap(socket).map(|socket| (socket, ()))
+    })
+}
+
+/// Returns a `Future` used to spawn a Gotham application.
+///
+/// This is used internally, but it's exposed for clients that want to set up their own TLS support
+/// and pass data down from it. This is a variant of bind_server, but where the variant wrapper
+/// must return (Socket, PreStateData). The PreStateData's fill_state will be called when the State
+/// is instantiated.
+pub fn bind_server_with_pre_state<NH, F, Wrapped, Wrap, Pre>(
+    listener: TcpListener,
+    new_handler: NH,
+    mut wrap: Wrap,
+) -> impl Future<Item = (), Error = ()>
+where
+    NH: NewHandler + 'static,
+    F: Future<Item = (Wrapped, Pre), Error = ()> + Send + 'static,
+    Wrapped: AsyncRead + AsyncWrite + Send + 'static,
+    Wrap: FnMut(TcpStream) -> F,
+    Pre: PreStateData + Send + 'static,
+{
     let protocol = Arc::new(Http::new());
     let gotham_service = GothamService::new(new_handler);
 
@@ -106,13 +130,15 @@ where
         .map_err(|e| panic!("socket error = {:?}", e))
         .for_each(move |socket| {
             let addr = socket.peer_addr().unwrap();
-            let service = gotham_service.connect(addr);
             let accepted_protocol = protocol.clone();
+            let gotham_service = gotham_service.clone();
 
             // NOTE: HTTP protocol errors and handshake errors are ignored here (i.e. so the socket
             // will be dropped).
             let handler = wrap(socket)
-                .and_then(move |socket| {
+                .and_then(move |(socket, pre_state)| {
+                    let service = gotham_service.connect(addr, pre_state);
+
                     accepted_protocol
                         .serve_connection(socket, service)
                         .map_err(|_| ())
