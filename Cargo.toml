@@ -81,7 +81,7 @@ members = [
     # finalizer
     "examples/finalizers/",
 
-
+    "examples/socket_data",
 ]
 
 [patch.crates-io]

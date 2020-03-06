@@ -33,6 +33,7 @@ pub mod middleware;
 pub mod pipeline;
 pub mod router;
 mod service;
+pub mod socket_data;
 pub mod state;
 
 /// Test utilities for Gotham and Gotham consumer apps.
@@ -57,7 +58,8 @@ use tokio::net::{TcpListener, TcpStream};
 
 use tokio::runtime::{self, Runtime};
 
-use crate::{handler::NewHandler, service::GothamService};
+use crate::socket_data::SocketData;
+use crate::{handler::NewHandler, service::ConnectedGothamService};
 
 pub use plain::*;
 #[cfg(feature = "rustls")]
@@ -92,19 +94,43 @@ where
 /// support. The wrap argument is a function that will receive a tokio-io TcpStream and should wrap
 /// the socket as necessary. Errors returned by this function will be ignored and the connection
 /// will be dropped if the future returned by the wrapper resolves to an error.
-pub async fn bind_server<'a, NH, F, Wrapped, Wrap>(
-    mut listener: TcpListener,
-    new_handler: NH,
+pub async fn bind_server<'a, NH, Wrap, WrapFut, Wrapped>(
+    listener: TcpListener,
+    handler: NH,
     wrap: Wrap,
 ) -> Result<(), ()>
 where
     NH: NewHandler + 'static,
-    F: Future<Output = Result<Wrapped, ()>> + Unpin + Send + 'static,
+    Wrap: Fn(TcpStream) -> WrapFut,
+    WrapFut: Future<Output = Result<Wrapped, ()>> + Send + 'static,
     Wrapped: Unpin + AsyncRead + AsyncWrite + Send + 'static,
-    Wrap: Fn(TcpStream) -> F,
+{
+    bind_server_with_socket_data(listener, handler, move |sock| {
+        let wrapped = wrap(sock);
+        async {
+            let socket = wrapped.await?;
+            Result::<_, ()>::Ok(((), socket))
+        }
+    })
+    .await
+}
+
+/// Similar to bind_server, but allows capturing `SocketData` when wrapping the socket, so that it
+/// can be passed through to the State.
+pub async fn bind_server_with_socket_data<'a, NH, Wrap, WrapFut, Wrapped, S>(
+    mut listener: TcpListener,
+    handler: NH,
+    wrap: Wrap,
+) -> Result<(), ()>
+where
+    NH: NewHandler + 'static,
+    S: SocketData + Send + 'static,
+    Wrap: Fn(TcpStream) -> WrapFut,
+    WrapFut: Future<Output = Result<(S, Wrapped), ()>> + Send + 'static,
+    Wrapped: Unpin + AsyncRead + AsyncWrite + Send + 'static,
 {
     let protocol = Arc::new(Http::new());
-    let gotham_service = GothamService::new(new_handler);
+    let handler = Arc::new(handler);
 
     listener
         .incoming()
@@ -115,17 +141,20 @@ where
             }
         })
         .for_each(|socket| {
+            let protocol = protocol.clone();
+            let handler = handler.clone();
+
             let addr = socket.peer_addr().unwrap();
-            let service = gotham_service.connect(addr);
-            let accepted_protocol = protocol.clone();
             let wrapper = wrap(socket);
 
             // NOTE: HTTP protocol errors and handshake errors are ignored here (i.e. so the socket
             // will be dropped).
             let task = async move {
-                let socket = wrapper.await?;
+                let (socket_data, socket) = wrapper.await?;
 
-                accepted_protocol
+                let service = ConnectedGothamService::connect(handler, addr, socket_data);
+
+                protocol
                     .serve_connection(socket, service)
                     .map_err(|_| ())
                     .await?;
