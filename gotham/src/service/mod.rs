@@ -17,51 +17,39 @@ use log::debug;
 use crate::handler::NewHandler;
 
 use crate::helpers::http::request::path::RequestPathSegments;
+use crate::socket_data::SocketData;
 use crate::state::client_addr::put_client_addr;
 use crate::state::{set_request_id, State};
 
 mod trap;
 
-/// Wraps a `NewHandler` which will be used to serve requests. Used in `gotham::os::*` to bind
-/// incoming connections to `ConnectedGothamService` values.
-pub(crate) struct GothamService<T>
-where
-    T: NewHandler + 'static,
-{
-    handler: Arc<T>,
-}
-
-impl<T> GothamService<T>
-where
-    T: NewHandler + 'static,
-{
-    pub(crate) fn new(handler: T) -> GothamService<T> {
-        GothamService {
-            handler: Arc::new(handler),
-        }
-    }
-
-    pub(crate) fn connect(&self, client_addr: SocketAddr) -> ConnectedGothamService<T> {
-        ConnectedGothamService {
-            client_addr,
-            handler: self.handler.clone(),
-        }
-    }
-}
-
-/// A `GothamService` which has been connected to a client. The major difference is that a
-/// `client_addr` has been assigned (as this isn't available from Hyper).
-pub(crate) struct ConnectedGothamService<T>
+/// A `Handler` which has been connected to a client.
+pub(crate) struct ConnectedGothamService<T, S>
 where
     T: NewHandler + 'static,
 {
     handler: Arc<T>,
     client_addr: SocketAddr,
+    socket_data: S,
 }
 
-impl<T> Service<Request<Body>> for ConnectedGothamService<T>
+impl<T, S> ConnectedGothamService<T, S>
+where
+    T: NewHandler + 'static,
+{
+    pub fn connect(handler: Arc<T>, client_addr: SocketAddr, socket_data: S) -> Self {
+        ConnectedGothamService {
+            handler,
+            client_addr,
+            socket_data,
+        }
+    }
+}
+
+impl<T, S> Service<Request<Body>> for ConnectedGothamService<T, S>
 where
     T: NewHandler,
+    S: SocketData,
 {
     type Response = Response<Body>;
     type Error = anyhow::Error;
@@ -78,6 +66,7 @@ where
         let mut state = State::new();
 
         put_client_addr(&mut state, self.client_addr);
+        self.socket_data.populate_state(&mut state);
 
         let (
             request::Parts {
@@ -128,14 +117,15 @@ mod tests {
 
     #[test]
     fn new_handler_closure() {
-        let service = GothamService::new(|| Ok(handler));
-
         let req = Request::get("http://localhost/")
             .body(Body::empty())
             .unwrap();
-        let f = service
-            .connect("127.0.0.1:10000".parse().unwrap())
-            .call(req);
+        let f = ConnectedGothamService::connect(
+            Arc::new(|| Ok(handler)),
+            "127.0.0.1:10000".parse().unwrap(),
+            (),
+        )
+        .call(req);
         let response = futures::executor::block_on(f).unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
     }
@@ -146,14 +136,15 @@ mod tests {
             route.get("/").to(handler);
         });
 
-        let service = GothamService::new(router);
-
         let req = Request::get("http://localhost/")
             .body(Body::empty())
             .unwrap();
-        let f = service
-            .connect("127.0.0.1:10000".parse().unwrap())
-            .call(req);
+        let f = ConnectedGothamService::connect(
+            Arc::new(router),
+            "127.0.0.1:10000".parse().unwrap(),
+            (),
+        )
+        .call(req);
         let response = futures::executor::block_on(f).unwrap();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
     }

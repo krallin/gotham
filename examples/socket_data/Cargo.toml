@@ -1,0 +1,14 @@
+[package]
+name = "gotham_examples_socket_data"
+description = "An introduction to socket data in Gotham"
+version = "0.0.0"
+publish = false
+edition = "2018"
+
+[dependencies]
+gotham = { path = "../../gotham" }
+gotham_derive = { path = "../../gotham_derive" }
+
+futures = "0.3.1"
+tokio = { version = "0.2.6", features = ["full"] }
+failure = "0.1"

@@ -81,5 +81,5 @@ members = [
     # finalizer
     "examples/finalizers/",
 
-
+    "examples/socket_data",
 ]

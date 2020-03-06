@@ -319,12 +319,13 @@ mod tests {
     use hyper::service::Service;
     use hyper::{body, Body, Request, Response, StatusCode};
     use serde_derive::Deserialize;
+    use std::sync::Arc;
 
     use crate::middleware::cookie::CookieParser;
     use crate::middleware::session::NewSessionMiddleware;
     use crate::pipeline::new_pipeline;
     use crate::router::response::extender::StaticResponseExtender;
-    use crate::service::GothamService;
+    use crate::service::ConnectedGothamService;
     use crate::state::{State, StateData};
 
     #[derive(Deserialize)]
@@ -533,10 +534,11 @@ mod tests {
             route.get("/trailing-slash/").to(welcome::trailing_slash);
         });
 
-        let new_service = GothamService::new(router);
+        let router = Arc::new(router);
 
         let call = move |req| {
-            let mut service = new_service.connect("127.0.0.1:10000".parse().unwrap());
+            let addr = "127.0.0.1:10000".parse().unwrap();
+            let mut service = ConnectedGothamService::connect(router.clone(), addr, ());
             futures::executor::block_on(service.call(req)).unwrap()
         };
 
