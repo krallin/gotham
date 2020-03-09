@@ -69,8 +69,7 @@ members = [
     "examples/diesel",
 
     # openssl
-    # TODO: Re-enable when this example is updated
-    # "examples/openssl",
+    "examples/openssl",
 
     # example_contribution_template
     "examples/example_contribution_template/name",

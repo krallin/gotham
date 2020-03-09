@@ -99,7 +99,7 @@ pub async fn bind_server<'a, NH, F, Wrapped, Wrap>(
 ) -> Result<(), ()>
 where
     NH: NewHandler + 'static,
-    F: Future<Output = Result<Wrapped, ()>> + Unpin + Send + 'static,
+    F: Future<Output = Result<Wrapped, ()>> + Send + 'static,
     Wrapped: Unpin + AsyncRead + AsyncWrite + Send + 'static,
     Wrap: Fn(TcpStream) -> F,
 {

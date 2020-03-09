@@ -1,6 +1,6 @@
 //! A Hello World example application for working with Gotham.
 use failure::{err_msg, Error};
-use futures::prelude::*;
+use std::sync::Arc;
 use openssl::{
     pkey::PKey,
     ssl::{SslAcceptor, SslMethod},
@@ -8,7 +8,6 @@ use openssl::{
 };
 use std::net::ToSocketAddrs;
 use tokio::{net::TcpListener, runtime::Runtime};
-use tokio_openssl::SslAcceptorExt;
 
 use gotham::{bind_server, state::State};
 
@@ -19,23 +18,29 @@ pub fn say_hello(state: State) -> (State, &'static str) {
 }
 
 /// Create an OpenSSL acceptor, then set up Gotham to use it.
-pub fn main() -> Result<(), Error> {
+#[tokio::main]
+pub async fn main() -> Result<(), Error> {
     let addr = "127.0.0.1:7878";
     println!("Listening for requests at https://{}", addr);
-    let acceptor = build_acceptor()?;
+    let acceptor = Arc::new(build_acceptor()?);
 
     let addr = addr
         .to_socket_addrs()?
         .next()
         .ok_or_else(|| err_msg("Invalid Socket Address"))?;
 
-    let listener = TcpListener::bind(&addr)?;
+    let listener = TcpListener::bind(&addr).await?;
 
     let server = bind_server(
         listener,
         || Ok(say_hello),
-        // NOTE: We're ignoring handshake errors here. You can modify to e.g. report them.
-        move |socket| acceptor.accept_async(socket).map_err(|_| ()),
+        move |socket| {
+            let acceptor = acceptor.clone();
+            async move {
+                // NOTE: We're ignoring handshake errors here. You can modify to e.g. report them.
+                tokio_openssl::accept(&acceptor, socket).await.map_err(|_| ())
+            }
+        },
     );
 
     let mut runtime = Runtime::new()?;
