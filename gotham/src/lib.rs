@@ -65,7 +65,8 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::{self, Runtime};
 
 use crate::socket_data::SocketData;
-use crate::{handler::NewHandler, service::ConnectedGothamService};
+use crate::{handler::NewHandler};
+pub use service::ConnectedGothamService;
 
 pub use plain::*;
 #[cfg(feature = "rustls")]

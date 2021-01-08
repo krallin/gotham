@@ -13,7 +13,7 @@ use std::collections::HashMap;
 pub use crate::state::client_addr::client_addr;
 pub use crate::state::data::StateData;
 pub use crate::state::from_state::FromState;
-pub use crate::state::request_id::request_id;
+pub use crate::state::request_id::{request_id, RequestId};
 
 pub(crate) use crate::state::request_id::set_request_id;
 

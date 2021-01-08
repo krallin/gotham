@@ -7,8 +7,15 @@ use uuid::Uuid;
 use crate::state::{FromState, State};
 
 /// A container type for the value returned by `request_id`.
-pub(super) struct RequestId {
+pub struct RequestId {
     val: String,
+}
+
+impl RequestId {
+    /// instantiate a new RequestId
+    pub fn new(val: impl Into<String>) -> Self {
+        Self { val: val.into() }
+    }
 }
 
 /// Sets a unique identifier for the request if it has not already been stored.

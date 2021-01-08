@@ -24,7 +24,7 @@ use crate::state::{set_request_id, State};
 mod trap;
 
 /// A `Handler` which has been connected to a client.
-pub(crate) struct ConnectedGothamService<T, S>
+pub struct ConnectedGothamService<T, S>
 where
     T: NewHandler + 'static,
 {
@@ -37,6 +37,8 @@ impl<T, S> ConnectedGothamService<T, S>
 where
     T: NewHandler + 'static,
 {
+    /// Connect this handler. This is a low level function that you might use to do your own server
+    /// set up.
     pub fn connect(handler: Arc<T>, client_addr: SocketAddr, socket_data: S) -> Self {
         ConnectedGothamService {
             handler,
