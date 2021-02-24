@@ -5,16 +5,21 @@ mod data;
 mod from_state;
 pub mod request_id;
 
-use log::trace;
+use log::{debug, trace};
 
+use http::request;
+use hyper::{Body, Request};
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
+use std::net::SocketAddr;
 
 pub use crate::state::client_addr::client_addr;
 pub use crate::state::data::StateData;
 pub use crate::state::from_state::FromState;
 pub use crate::state::request_id::request_id;
 
+use crate::helpers::http::request::path::RequestPathSegments;
+use crate::state::client_addr::put_client_addr;
 pub(crate) use crate::state::request_id::set_request_id;
 
 /// Provides storage for request state, and stores one item of each type. The types used for
@@ -415,5 +420,42 @@ impl State {
     {
         self.try_take()
             .expect("required type is not present in State container")
+    }
+
+    /// Instantiate a new `State` for a given `Request`.
+    pub fn from_request(req: Request<Body>, client_addr: SocketAddr) -> Self {
+        let mut state = Self::new();
+
+        put_client_addr(&mut state, client_addr);
+
+        let (
+            request::Parts {
+                method,
+                uri,
+                version,
+                headers,
+                //extensions?
+                ..
+            },
+            body,
+        ) = req.into_parts();
+
+        state.put(RequestPathSegments::new(uri.path()));
+        state.put(method);
+        state.put(uri);
+        state.put(version);
+        state.put(headers);
+        state.put(body);
+
+        {
+            let request_id = set_request_id(&mut state);
+            debug!(
+                "[DEBUG][{}][Thread][{:?}]",
+                request_id,
+                std::thread::current().id(),
+            );
+        };
+
+        state
     }
 }

@@ -5,20 +5,14 @@ use std::net::SocketAddr;
 use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::thread;
 
 use futures::prelude::*;
 use futures::task::{self, Poll};
-use http::request;
 use hyper::service::Service;
 use hyper::{Body, Request, Response};
-use log::debug;
 
 use crate::handler::NewHandler;
-
-use crate::helpers::http::request::path::RequestPathSegments;
-use crate::state::client_addr::put_client_addr;
-use crate::state::{set_request_id, State};
+use crate::state::State;
 
 mod trap;
 
@@ -75,38 +69,7 @@ where
     }
 
     fn call<'a>(&'a mut self, req: Request<Body>) -> Self::Future {
-        let mut state = State::new();
-
-        put_client_addr(&mut state, self.client_addr);
-
-        let (
-            request::Parts {
-                method,
-                uri,
-                version,
-                headers,
-                //extensions?
-                ..
-            },
-            body,
-        ) = req.into_parts();
-
-        state.put(RequestPathSegments::new(uri.path()));
-        state.put(method);
-        state.put(uri);
-        state.put(version);
-        state.put(headers);
-        state.put(body);
-
-        {
-            let request_id = set_request_id(&mut state);
-            debug!(
-                "[DEBUG][{}][Thread][{:?}]",
-                request_id,
-                thread::current().id(),
-            );
-        };
-
+        let state = State::from_request(req, self.client_addr);
         trap::call_handler(self.handler.clone(), AssertUnwindSafe(state)).boxed()
     }
 }
