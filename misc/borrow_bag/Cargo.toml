@@ -1,9 +1,0 @@
-[package]
-name = "borrow-bag"
-version = "1.0.0"
-authors = ["Shaun Mangelsdorf <s.mangelsdorf@gmail.com>",
-           "Bradley Beddoes <bradleybeddoes@gmail.com>"]
-description = "A type-safe, heterogeneous collection with zero-cost add and borrow"
-license = "MIT/Apache-2.0"
-homepage = "https://gotham.rs"
-repository = "https://github.com/gotham-rs/gotham"
